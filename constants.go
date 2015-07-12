@@ -142,7 +142,7 @@ var LowerCase = getByteRange(0x60, 0x7E)
 // Alphabetics	  40-7E hex  (all of upper and lower case)
 var Alphabetics = append(UpperCase, LowerCase...)
 
-var Printables = getByteRange(0x20, 0x7F)
+var Printables = append(getByteRange(0x20, 0x7F), ANSI_CARRIAGE_RETURN, ANSI_LINE_FEED)
 
 var EscapeIntermediateToGroundBytes = getByteRange(0x30, 0x7E)
 var EscapeToGroundBytes = getEscapeToGroundBytes()
@@ -161,7 +161,8 @@ func getEscapeToGroundBytes() []byte {
 }
 
 func getExecuteBytes() []byte {
-	executeBytes := getByteRange(0x00, 0x17)
+	executeBytes := getByteRange(0x00, 0x0F)
+	executeBytes = append(executeBytes, getByteRange(0x0A, 0x012)...)
 	executeBytes = append(executeBytes, 0x19)
 	executeBytes = append(executeBytes, getByteRange(0x1C, 0x1F)...)
 	return executeBytes
