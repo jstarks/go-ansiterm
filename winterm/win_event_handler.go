@@ -54,8 +54,6 @@ type scrollRegion struct {
 }
 
 func (h *WindowsAnsiEventHandler) Print(b byte) error {
-	logger.Infof("Print: [%v]", string(b))
-
 	bytes := []byte{b}
 
 	_, err := h.file.Write(bytes)
@@ -67,8 +65,6 @@ func (h *WindowsAnsiEventHandler) Print(b byte) error {
 }
 
 func (h *WindowsAnsiEventHandler) Execute(b byte) error {
-	logger.Infof("Execute %#x", b)
-
 	info, err := GetConsoleScreenBufferInfo(h.fd)
 	if err != nil {
 		return err
