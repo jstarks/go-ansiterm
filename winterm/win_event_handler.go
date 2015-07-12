@@ -65,29 +65,6 @@ func (h *WindowsAnsiEventHandler) printSlice(bytes []byte) error {
 }
 
 func (h *WindowsAnsiEventHandler) Execute(b byte) error {
-	info, err := GetConsoleScreenBufferInfo(h.fd)
-	if err != nil {
-		return err
-	}
-
-	if int(info.CursorPosition.Y) == h.sr.bottom {
-		if ANSI_LINE_FEED == b {
-			// Scroll up one row if we attempt to line feed at the bottom
-			// of the scroll region
-			if err := h.scrollUp(1); err != nil {
-				return err
-			}
-
-			// Clear line
-			// if err := h.CUD(1); err != nil {
-			// 	return err
-			// }
-			if err := h.EL(0); err != nil {
-				return err
-			}
-		}
-	}
-
 	if ANSI_BEL <= b && b <= ANSI_CARRIAGE_RETURN {
 		return h.printSlice([]byte{b})
 	}
