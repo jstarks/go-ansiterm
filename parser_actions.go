@@ -95,7 +95,10 @@ func (ap *AnsiParser) csiDispatch() error {
 }
 
 func (ap *AnsiParser) print() error {
-	return ap.eventHandler.Print(ap.context.currentChar)
+	if ap.context.printBuffer.Len() == 0 {
+		return nil
+	}
+	return ap.eventHandler.Print(&ap.context.printBuffer)
 }
 
 func (ap *AnsiParser) clear() error {

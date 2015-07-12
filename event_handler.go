@@ -1,8 +1,12 @@
 package ansiterm
 
+import (
+	"bytes"
+)
+
 type AnsiEventHandler interface {
 	// Print
-	Print(b byte) error
+	Print(buf *bytes.Buffer) error
 
 	// Execute C0 commands
 	Execute(b byte) error

@@ -14,11 +14,20 @@ func (gs GroundState) Handle(b byte) (s State, e error) {
 
 	switch {
 	case sliceContains(Printables, b):
-		return gs, gs.parser.print()
+		return gs, gs.parser.context.printBuffer.WriteByte(b)
 
 	case sliceContains(Executors, b):
-		return gs, gs.parser.execute()
+		// flush any unwritten printable bytes before executing this byte
+		if err = gs.Flush(); err == nil {
+			err = gs.parser.execute()
+		}
+		return gs, err
 	}
 
 	return gs, nil
+}
+
+func (gs GroundState) Flush() error {
+	// flush any printable bytes
+	return gs.parser.print()
 }

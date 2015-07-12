@@ -1,6 +1,7 @@
 package ansiterm
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 )
@@ -20,8 +21,11 @@ func (h *TestAnsiEventHandler) recordCall(call string, params []string) {
 	h.FunctionCalls = append(h.FunctionCalls, s)
 }
 
-func (h *TestAnsiEventHandler) Print(b byte) error {
-	h.recordCall("Print", []string{string(b)})
+func (h *TestAnsiEventHandler) Print(buf *bytes.Buffer) error {
+	for _, b := range buf.Bytes() {
+		h.recordCall("Print", []string{string(b)})
+	}
+	buf.Reset()
 	return nil
 }
 

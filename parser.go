@@ -87,7 +87,7 @@ func (ap *AnsiParser) Parse(bytes []byte) (int, error) {
 		}
 	}
 
-	return len(bytes), nil
+	return len(bytes), ap.currState.Flush()
 }
 
 func (ap *AnsiParser) handle(b byte) error {
@@ -113,6 +113,12 @@ func (ap *AnsiParser) handle(b byte) error {
 
 func (ap *AnsiParser) changeState(newState State) error {
 	logger.Infof("ChangeState %s --> %s", ap.currState.Name(), newState.Name())
+
+	// Flush any buffered data
+	if err := ap.currState.Flush(); err != nil {
+		logger.Infof("Flushing buffer for state '%s' failed with : '%v'", ap.currState.Name(), err)
+		return err
+	}
 
 	// Exit old state
 	if err := ap.currState.Exit(); err != nil {

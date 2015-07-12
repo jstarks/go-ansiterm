@@ -5,6 +5,7 @@ type StateId int
 type State interface {
 	Enter() error
 	Exit() error
+	Flush() error
 	Handle(byte) (State, error)
 	Name() string
 	Transition(State) error
@@ -20,6 +21,10 @@ func (base BaseState) Enter() error {
 }
 
 func (base BaseState) Exit() error {
+	return nil
+}
+
+func (base BaseState) Flush() error {
 	return nil
 }
 

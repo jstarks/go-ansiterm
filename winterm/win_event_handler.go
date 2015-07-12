@@ -3,6 +3,7 @@
 package winterm
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -53,15 +54,14 @@ type scrollRegion struct {
 	bottom int
 }
 
-func (h *WindowsAnsiEventHandler) Print(b byte) error {
-	bytes := []byte{b}
+func (h *WindowsAnsiEventHandler) Print(buf *bytes.Buffer) error {
+	_, err := buf.WriteTo(h.file)
+	return err
+}
 
+func (h *WindowsAnsiEventHandler) printSlice(bytes []byte) error {
 	_, err := h.file.Write(bytes)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (h *WindowsAnsiEventHandler) Execute(b byte) error {
@@ -89,7 +89,7 @@ func (h *WindowsAnsiEventHandler) Execute(b byte) error {
 	}
 
 	if ANSI_BEL <= b && b <= ANSI_CARRIAGE_RETURN {
-		return h.Print(b)
+		return h.printSlice([]byte{b})
 	}
 
 	return nil
@@ -314,17 +314,15 @@ func (h *WindowsAnsiEventHandler) DA(params []string) error {
 	// See the site below for details of the device attributes command
 	// http://vt100.net/docs/vt220-rm/chapter4.html
 
+	var bytes []byte
+
 	// First character of first parameter string is '>'
 	if params[0][0] == '>' {
 		// Secondary device attribute request:
 		// Respond with:
 		// "I am a VT220 version 1.0, no options.
 		//                    CSI     >     1     ;     1     0     ;     0     c    CR    LF
-		bytes := []byte{CSI_ENTRY, 0x3E, 0x31, 0x3B, 0x31, 0x30, 0x3B, 0x30, 0x63, 0x0D, 0x0A}
-
-		for _, b := range bytes {
-			h.Print(b)
-		}
+		bytes = []byte{CSI_ENTRY, 0x3E, 0x31, 0x3B, 0x31, 0x30, 0x3B, 0x30, 0x63, 0x0D, 0x0A}
 	} else {
 		// Primary device attribute request:
 		// Respond with:
@@ -332,14 +330,10 @@ func (h *WindowsAnsiEventHandler) DA(params []string) error {
 		// printer port (2), selective erase (6), DRCS (7), UDK (8),
 		// and I support 7-bit national replacement character sets (9)."
 		//                    CSI     ?     6     2     ;     1     ;     2     ;     6     ;     7     ;     8     ;     9     c    CR    LF
-		bytes := []byte{CSI_ENTRY, 0x3F, 0x36, 0x32, 0x3B, 0x31, 0x3B, 0x32, 0x3B, 0x36, 0x3B, 0x37, 0x3B, 0x38, 0x3B, 0x39, 0x63, 0x0D, 0x0A}
-
-		for _, b := range bytes {
-			h.Print(b)
-		}
+		bytes = []byte{CSI_ENTRY, 0x3F, 0x36, 0x32, 0x3B, 0x31, 0x3B, 0x32, 0x3B, 0x36, 0x3B, 0x37, 0x3B, 0x38, 0x3B, 0x39, 0x63, 0x0D, 0x0A}
 	}
 
-	return nil
+	return h.printSlice(bytes)
 }
 
 func (h *WindowsAnsiEventHandler) DECSTBM(top int, bottom int) error {
