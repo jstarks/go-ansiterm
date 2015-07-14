@@ -25,7 +25,15 @@ func (ap *AnsiParser) escDispatch() error {
 	logger.Infof("escDispatch: %v(%v)", cmd, intermeds)
 
 	switch cmd {
-	case "M":
+	case "D": // IND, equivalent to LF
+		return ap.eventHandler.Execute(ANSI_LINE_FEED)
+	case "E": // NEL, equivalent to CRLF
+		err := ap.eventHandler.Execute(ANSI_CARRIAGE_RETURN)
+		if err == nil {
+			err = ap.eventHandler.Execute(ANSI_LINE_FEED)
+		}
+		return err
+	case "M": // RI
 		return ap.eventHandler.RI()
 	}
 
