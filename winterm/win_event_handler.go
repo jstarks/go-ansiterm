@@ -86,24 +86,10 @@ func (h *WindowsAnsiEventHandler) Execute(b byte) error {
 			bytes[len(bytes)-1] = ANSI_LINE_FEED
 			return nil
 		} else {
-			// Only if the console is in raw mode replace LF with the cursor
-			// movement. If it's in cooked mode then treat LF as CRLF.
-			//
-			// This pre-processing should happen outside here, and we shouldn't 
-            // be looking at the console mode for this. For now, though, there
-			// is no other choice without changes to the callers of this
-			// package -- they currently set the console mode directly on the
-            // file descriptor.
-			mode, err := GetConsoleMode(h.fd)
-			if err != nil {
+			if err := h.prepareForCommand(true); err != nil {
 				return err
 			}
-			if mode&ENABLE_PROCESSED_INPUT == 0 {
-				if err := h.prepareForCommand(true); err != nil {
-					return err
-				}
-				return h.CUD(1)
-			}
+			return h.CUD(1)
 		}
 	}
 
@@ -500,4 +486,12 @@ func (h *WindowsAnsiEventHandler) prepareForCommand(resetWrap bool) error {
 		h.wrapNext = false
 	}
 	return nil
+}
+
+func (h *WindowsAnsiEventHandler) IsRawMode() (bool, error) {
+	mode, err := GetConsoleMode(h.fd)
+	if err != nil {
+		return false, err
+	}
+	return mode&ENABLE_PROCESSED_INPUT == 0, nil
 }

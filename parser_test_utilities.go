@@ -28,16 +28,16 @@ func validateFuncCalls(t *testing.T, actualCalls []string, expectedCalls []strin
 	expectedCount := len(expectedCalls)
 
 	if actualCount != expectedCount {
-		t.Errorf("Actual   calls: %v", actualCalls)
-		t.Errorf("Expected calls: %v", expectedCalls)
+		t.Errorf("Actual   calls: %#v", actualCalls)
+		t.Errorf("Expected calls: %#v", expectedCalls)
 		t.Errorf("Call count error: %d != %d", actualCount, expectedCount)
 		return
 	}
 
 	for i, v := range actualCalls {
 		if v != expectedCalls[i] {
-			t.Errorf("Actual   calls: %v", actualCalls)
-			t.Errorf("Expected calls: %v", expectedCalls)
+			t.Errorf("Actual   calls: %#v", actualCalls)
+			t.Errorf("Expected calls: %#v", expectedCalls)
 			t.Errorf("Mismatched calls: %s != %s with lengths %d and %d", v, expectedCalls[i], len(v), len(expectedCalls[i]))
 		}
 	}

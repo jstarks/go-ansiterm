@@ -69,4 +69,7 @@ type AnsiEventHandler interface {
 
 	// Flush updates from previous commands
 	Flush() error
+
+	// Has the console been configured for raw mode?
+	IsRawMode() (bool, error)
 }

@@ -139,3 +139,11 @@ func TestC0(t *testing.T) {
 func TestEscDispatch(t *testing.T) {
 	funcCallParamHelper(t, []byte{'M'}, "Escape", "Ground", []string{"RI([])"})
 }
+
+func TestCRLFTransform(t *testing.T) {
+	funcCallParamHelper(t, []byte{'\r', '\n'}, "Ground", "Ground", []string{"Execute([\r])", "Execute([\n])"})
+	funcCallParamHelper(t, []byte{'\n'}, "Ground", "Ground", []string{"Execute([\n])"})
+	cookedFuncCallParamHelper(t, []byte{'\r', '\n'}, "Ground", "Ground", []string{"Execute([\r])", "Execute([\n])"})
+	cookedFuncCallParamHelper(t, []byte{'\n'}, "Ground", "Ground", []string{"Execute([\r])", "Execute([\n])"})
+	cookedFuncCallParamHelper(t, []byte{'\r', 'x', '\n'}, "Ground", "Ground", []string{"Execute([\r])", "Print([x])", "Execute([\r])", "Execute([\n])"})
+}

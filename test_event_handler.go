@@ -7,11 +7,14 @@ import (
 
 type TestAnsiEventHandler struct {
 	FunctionCalls []string
+	RawMode       bool
 }
 
 func CreateTestAnsiEventHandler() *TestAnsiEventHandler {
-	evtHandler := TestAnsiEventHandler{}
-	evtHandler.FunctionCalls = make([]string, 0)
+	evtHandler := TestAnsiEventHandler{
+		FunctionCalls: make([]string, 0),
+		RawMode:       true,
+	}
 	return &evtHandler
 }
 
@@ -140,4 +143,8 @@ func (h *TestAnsiEventHandler) RI() error {
 
 func (h *TestAnsiEventHandler) Flush() error {
 	return nil
+}
+
+func (h *TestAnsiEventHandler) IsRawMode() (bool, error) {
+	return h.RawMode, nil
 }

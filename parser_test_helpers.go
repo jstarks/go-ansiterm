@@ -38,6 +38,14 @@ func funcCallParamHelper(t *testing.T, bytes []byte, start string, expected stri
 	validateFuncCalls(t, evtHandler.FunctionCalls, expectedCalls)
 }
 
+func cookedFuncCallParamHelper(t *testing.T, bytes []byte, start string, expected string, expectedCalls []string) {
+	parser, evtHandler := createTestParser(start)
+	evtHandler.RawMode = false
+	parser.Parse(bytes)
+	validateState(t, parser.currState, expected)
+	validateFuncCalls(t, evtHandler.FunctionCalls, expectedCalls)
+}
+
 func parseParamsHelper(t *testing.T, bytes []byte, expectedParams []string) {
 	params, err := parseParams(bytes)
 

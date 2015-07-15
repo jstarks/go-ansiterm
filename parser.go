@@ -81,7 +81,32 @@ func getState(name string, states []State) State {
 }
 
 func (ap *AnsiParser) Parse(bytes []byte) (int, error) {
+	wasCr := false
+	rawModeDetected := false
+	rawMode := false
 	for i, b := range bytes {
+		if b == ANSI_LINE_FEED && !wasCr {
+			// This is a standalone line feed. If the
+			// console is in cooked mode, convert it
+			// to CRLF. (Currently only the event handler
+			// knows if the console is in cooked mode.
+			// Fixing this will require changing the
+			// package's clients.)
+			if !rawModeDetected {
+				var err error
+				rawMode, err = ap.eventHandler.IsRawMode()
+				if err != nil {
+					return i, err
+				}
+				rawModeDetected = true
+			}
+			if !rawMode {
+				if err := ap.handle(ANSI_CARRIAGE_RETURN); err != nil {
+					return i, err
+				}
+			}
+		}
+		wasCr = b == ANSI_CARRIAGE_RETURN
 		if err := ap.handle(b); err != nil {
 			return i, err
 		}
