@@ -77,6 +77,7 @@ const (
 	DEFAULT_HEIGHT   = 24
 
 	ANSI_BEL              = 0x07
+    ANSI_BACKSPACE        = 0x08
 	ANSI_LINE_FEED        = 0x0A
 	ANSI_CARRIAGE_RETURN  = 0x0D
 	ANSI_ESCAPE_PRIMARY   = 0x1B

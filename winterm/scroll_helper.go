@@ -16,44 +16,37 @@ func (h *WindowsAnsiEventHandler) scrollPage(param int) error {
 		return err
 	}
 
-	tmpScrollTop := h.sr.top
-	tmpScrollBottom := h.sr.bottom
-
-	// Set scroll region to whole window
-	h.sr.top = 0
-	h.sr.bottom = int(info.Size.Y - 1)
-
-	err = h.scroll(param)
-
-	h.sr.top = tmpScrollTop
-	h.sr.bottom = tmpScrollBottom
-
-	return err
+	return h.scroll(param, scrollRegion{0, info.Size.Y - 1})
 }
 
 func (h *WindowsAnsiEventHandler) scrollUp(param int) error {
-	return h.scroll(param)
+	return h.scroll(param, h.sr)
 }
 
 func (h *WindowsAnsiEventHandler) scrollDown(param int) error {
-	return h.scroll(-param)
+	return h.scroll(-param, h.sr)
 }
 
-func (h *WindowsAnsiEventHandler) scroll(param int) error {
+func (h *WindowsAnsiEventHandler) scroll(param int, sr scrollRegion) error {
 
 	info, err := GetConsoleScreenBufferInfo(h.fd)
 	if err != nil {
 		return err
 	}
+    
+    if sr.top >= sr.bottom {
+        sr.top = 0
+        sr.bottom = info.Window.Bottom - info.Window.Top + 1
+    }
 
-	logger.Infof("scroll: scrollTop: %d, scrollBottom: %d", h.sr.top, h.sr.bottom)
+	logger.Infof("scroll: scrollTop: %d, scrollBottom: %d", sr.top, sr.bottom)
 	logger.Infof("scroll: windowTop: %d, windowBottom: %d", info.Window.Top, info.Window.Bottom)
 
 	rect := info.Window
 
 	// Current scroll region in Windows backing buffer coordinates
-	top := rect.Top + SHORT(h.sr.top)
-	bottom := rect.Top + SHORT(h.sr.bottom)
+	top := rect.Top + SHORT(sr.top)
+	bottom := rect.Top + SHORT(sr.bottom)
 
 	// Area from backing buffer to be copied
 	scrollRect := SMALL_RECT{
@@ -85,6 +78,6 @@ func (h *WindowsAnsiEventHandler) scroll(param int) error {
 	if err := ScrollConsoleScreenBuffer(h.fd, scrollRect, clipRegion, destOrigin, char); err != nil {
 		return err
 	}
-
+    logger.Infof("scroll success")
 	return nil
 }
