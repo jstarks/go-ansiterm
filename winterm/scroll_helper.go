@@ -59,16 +59,16 @@ func (h *WindowsAnsiEventHandler) scroll(param int) error {
 	scrollRect := SMALL_RECT{
 		Top:    top + SHORT(param),
 		Bottom: bottom + SHORT(param),
-		Left:   rect.Left,
-		Right:  rect.Right,
+		Left:   0,
+		Right:  info.Size.X-1,
 	}
 
 	// Clipping region should be the original scroll region
 	clipRegion := SMALL_RECT{
 		Top:    top,
 		Bottom: bottom,
-		Left:   rect.Left,
-		Right:  rect.Right,
+		Left:   0,
+		Right:  info.Size.X-1,
 	}
 
 	// Origin to which area should be copied
