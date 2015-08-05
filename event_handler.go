@@ -67,9 +67,6 @@ type AnsiEventHandler interface {
 	// Set Top and Bottom Margins
 	DECSTBM(int, int) error
 
-	// Index
-	IND() error
-
 	// Reverse Index
 	RI() error
 

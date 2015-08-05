@@ -143,11 +143,6 @@ func (h *TestAnsiEventHandler) RI() error {
 	return nil
 }
 
-func (h *TestAnsiEventHandler) IND() error {
-	h.recordCall("IND", nil)
-	return nil
-}
-
 func (h *TestAnsiEventHandler) Flush() error {
 	return nil
 }
