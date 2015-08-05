@@ -220,8 +220,7 @@ func (h *WindowsAnsiEventHandler) CUP(row int, col int) error {
 	if err := h.prepareForCommand(true); err != nil {
 		return err
 	}
-	rowStr, colStr := strconv.Itoa(row), strconv.Itoa(col)
-	logger.Infof("CUP: [%v]", []string{rowStr, colStr})
+	logger.Infof("CUP: [%d %d]", row, col)
 	info, err := GetConsoleScreenBufferInfo(h.fd)
 	if err != nil {
 		return err
@@ -239,8 +238,7 @@ func (h *WindowsAnsiEventHandler) HVP(row int, col int) error {
 	if err := h.prepareForCommand(true); err != nil {
 		return err
 	}
-	rowS, colS := strconv.Itoa(row), strconv.Itoa(row)
-	logger.Infof("HVP: [%v]", []string{rowS, colS})
+	logger.Infof("HVP: [%d %d]", row, col)
 	return h.CUP(row, col)
 }
 
