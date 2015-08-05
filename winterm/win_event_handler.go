@@ -15,8 +15,6 @@ import (
 var logger *logrus.Logger
 
 type WindowsAnsiEventHandler struct {
-	attributes     WORD
-	inverted       bool
 	fd             uintptr
 	file           *os.File
 	infoReset      *CONSOLE_SCREEN_BUFFER_INFO
@@ -24,6 +22,8 @@ type WindowsAnsiEventHandler struct {
 	buffer         bytes.Buffer
 	wrapNext       bool
 	drewMarginByte bool
+	inverted       bool
+	attributes     WORD
 	marginByte     byte
 	curInfo        *CONSOLE_SCREEN_BUFFER_INFO
 	curPos         COORD
