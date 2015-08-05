@@ -484,15 +484,31 @@ func (h *WindowsAnsiEventHandler) RI() error {
 		return err
 	}
 
-	if info.Window.Top == info.CursorPosition.Y {
-		if err := h.scrollPageDown(); err != nil {
-			return err
-		}
-
-		return h.EL(2)
+    sr := h.effectiveSr(info.Window)
+	if info.CursorPosition.Y > sr.top {
+		return h.moveCursorVertical(-1)
 	} else {
-		return h.CUU(1)
+		return h.scrollDown(1)
 	}
+}
+
+func (h *WindowsAnsiEventHandler) IND() error {
+	if err := h.prepareForCommand(true); err != nil {
+		return err
+	}
+	logger.Info("IND: []")
+    
+	info, err := GetConsoleScreenBufferInfo(h.fd)
+	if err != nil {
+		return err
+	}
+    
+    sr := h.effectiveSr(info.Window)
+    if info.CursorPosition.Y < sr.bottom {
+        return h.moveCursorVertical(1)
+    } else {
+        return h.scrollUp(1)
+    }
 }
 
 func (h *WindowsAnsiEventHandler) Flush() error {
