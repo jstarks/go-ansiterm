@@ -66,7 +66,7 @@ type scrollRegion struct {
 // In the false case, the caller should ensure that a carriage return
 // and line feed are inserted or that the text is otherwise wrapped.
 func (h *WindowsAnsiEventHandler) simulateLF(includeCR bool) (bool, error) {
-	if err := h.cacheInfo(); err != nil {
+	if err := h.cacheConsoleInfo(); err != nil {
 		return false, err
 	}
 	if includeCR {
@@ -119,7 +119,7 @@ func (h *WindowsAnsiEventHandler) simulateLF(includeCR bool) (bool, error) {
 }
 
 func (h *WindowsAnsiEventHandler) Print(b byte) error {
-	if err := h.cacheInfo(); err != nil {
+	if err := h.cacheConsoleInfo(); err != nil {
 		return err
 	}
 	// If the column is already in the "wrap" position, then
@@ -130,7 +130,7 @@ func (h *WindowsAnsiEventHandler) Print(b byte) error {
 			return err
 		}
 		// Re-establish the cached position information.
-		if err := h.cacheInfo(); err != nil {
+		if err := h.cacheConsoleInfo(); err != nil {
 			return err
 		}
 	}
@@ -141,7 +141,7 @@ func (h *WindowsAnsiEventHandler) Print(b byte) error {
 func (h *WindowsAnsiEventHandler) Execute(b byte) error {
 	switch b {
 	case ANSI_TAB:
-		if err := h.cacheInfo(); err != nil {
+		if err := h.cacheConsoleInfo(); err != nil {
 			return err
 		}
 		// Move to the next tab stop, but stay in the margin if already there.
@@ -171,7 +171,7 @@ func (h *WindowsAnsiEventHandler) Execute(b byte) error {
 
 	case ANSI_BACKSPACE:
 		h.clearWrap()
-		if err := h.cacheInfo(); err != nil {
+		if err := h.cacheConsoleInfo(); err != nil {
 			return err
 		}
 		if h.curPos.X > 0 {
@@ -196,7 +196,7 @@ func (h *WindowsAnsiEventHandler) Execute(b byte) error {
 
 	case ANSI_CARRIAGE_RETURN:
 		h.clearWrap()
-		if err := h.cacheInfo(); err != nil {
+		if err := h.cacheConsoleInfo(); err != nil {
 			return err
 		}
 		h.curPos.X = 0
@@ -498,31 +498,9 @@ func (h *WindowsAnsiEventHandler) SD(param int) error {
 }
 
 func (h *WindowsAnsiEventHandler) DA(params []string) error {
-	// Since this command just affects the buffer, there is no need to call Flush
-
 	logger.Infof("DA: [%v]", params)
-
-	// See the site below for details of the device attributes command
-	// http://vt100.net/docs/vt220-rm/chapter4.html
-
-	// First character of first parameter string is '>'
-	if params[0][0] == '>' {
-		// Secondary device attribute request:
-		// Respond with:
-		// "I am a VT220 version 1.0, no options.
-		//                    CSI     >     1     ;     1     0     ;     0     c    CR    LF
-		h.buffer.Write([]byte{CSI_ENTRY, 0x3E, 0x31, 0x3B, 0x31, 0x30, 0x3B, 0x30, 0x63, 0x0D, 0x0A})
-
-	} else {
-		// Primary device attribute request:
-		// Respond with:
-		// "I am a service class 2 terminal (62) with 132 columns (1),
-		// printer port (2), selective erase (6), DRCS (7), UDK (8),
-		// and I support 7-bit national replacement character sets (9)."
-		//                    CSI     ?     6     2     ;     1     ;     2     ;     6     ;     7     ;     8     ;     9     c    CR    LF
-		h.buffer.Write([]byte{CSI_ENTRY, 0x3F, 0x36, 0x32, 0x3B, 0x31, 0x3B, 0x32, 0x3B, 0x36, 0x3B, 0x37, 0x3B, 0x38, 0x3B, 0x39, 0x63, 0x0D, 0x0A})
-	}
-
+	// DA cannot be implemented because it must send data on the VT100 input stream,
+	// which is not available to go-ansiterm.
 	return nil
 }
 
@@ -571,7 +549,7 @@ func (h *WindowsAnsiEventHandler) IND() error {
 	}
 	if !handled {
 		// The LF was not simulated, so send it through to Windows.
-		if err := h.cacheInfo(); err != nil {
+		if err := h.cacheConsoleInfo(); err != nil {
 			return err
 		}
 		h.buffer.WriteByte('\n')
@@ -582,7 +560,7 @@ func (h *WindowsAnsiEventHandler) IND() error {
 			if err := h.Flush(); err != nil {
 				return err
 			}
-			h.cacheInfo()
+			h.cacheConsoleInfo()
 			if err := SetConsoleCursorPosition(h.fd, newPos); err != nil {
 				return err
 			}
@@ -603,7 +581,7 @@ func (h *WindowsAnsiEventHandler) Flush() error {
 
 	logger.Infof("Flush: [%s]", h.buffer.Bytes())
 
-	if err := h.cacheInfo(); err != nil {
+	if err := h.cacheConsoleInfo(); err != nil {
 		return nil
 	}
 	bytes := h.buffer.Bytes()
@@ -613,7 +591,7 @@ func (h *WindowsAnsiEventHandler) Flush() error {
 		wasInMargin bool
 	)
 	if h.curPos.X == h.curInfo.Size.X {
-		// We are in the margin. Write everything but the last byte (which
+		// The cursor is in the margin. Write everything but the last byte (which
 		// by construction must be a printable character).
 		writeCount = len(bytes) - 1
 		wasInMargin = true
@@ -630,7 +608,6 @@ func (h *WindowsAnsiEventHandler) Flush() error {
 	if wasInMargin {
 		// Output the last byte to the screen without adjusting the cursor position.
 		wrapByte := bytes[writeCount]
-		logger.Infof("output trailing character '%c' to avoid wrap", wrapByte)
 		charInfo := []CHAR_INFO{{UnicodeChar: WCHAR(wrapByte), Attributes: h.curInfo.Attributes}}
 		size := COORD{1, 1}
 		position := COORD{0, 0}
@@ -651,7 +628,9 @@ func (h *WindowsAnsiEventHandler) Flush() error {
 	return nil
 }
 
-func (h *WindowsAnsiEventHandler) cacheInfo() error {
+// cacheConsoleInfo ensures that the current console screen information has been queried
+// since the last call to Flush(). It must be called before accessing h.curInfo or h.curPos.
+func (h *WindowsAnsiEventHandler) cacheConsoleInfo() error {
 	if h.curInfo == nil {
 		info, err := GetConsoleScreenBufferInfo(h.fd)
 		if err != nil {
@@ -659,6 +638,8 @@ func (h *WindowsAnsiEventHandler) cacheInfo() error {
 		}
 		h.curInfo = info
 		h.curPos = info.CursorPosition
+		// If the previous Flush() occurred while the cursor was in the margin, restore
+		// the in-memory cursor position to the margin.
 		if h.wasInMargin && h.curPos.X == h.curInfo.Size.X-1 {
 			h.curPos.X = h.curInfo.Size.X
 		}
@@ -666,6 +647,9 @@ func (h *WindowsAnsiEventHandler) cacheInfo() error {
 	return nil
 }
 
+// clearWrap clears the state where the cursor is in the margin
+// waiting for the next character before wrapping the line. This must
+// be done before most operations that act on the cursor.
 func (h *WindowsAnsiEventHandler) clearWrap() {
 	if !h.bufferEmpty() {
 		if h.curInfo != nil && h.curPos.X == h.curInfo.Size.X {
