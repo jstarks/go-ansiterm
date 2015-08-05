@@ -324,7 +324,7 @@ func (h *WindowsAnsiEventHandler) CUP(row int, col int) error {
 
 	rect := info.Window
 	rowS := AddInRange(SHORT(row-1), rect.Top, rect.Top, rect.Bottom)
-	colS := AddInRange(SHORT(col-1), rect.Left, rect.Left, rect.Right)
+	colS := ensureInRange(SHORT(col-1), 0, info.Size.X-1)
 	position := COORD{colS, rowS}
 
 	return h.setCursorPosition(position, info.Size)
