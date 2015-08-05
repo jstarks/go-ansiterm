@@ -15,8 +15,8 @@ import (
 var logger *logrus.Logger
 
 type WindowsAnsiEventHandler struct {
-	attributes WORD
-	inverted   bool
+	attributes     WORD
+	inverted       bool
 	fd             uintptr
 	file           *os.File
 	infoReset      *CONSOLE_SCREEN_BUFFER_INFO
@@ -49,9 +49,9 @@ func CreateWinEventHandler(fd uintptr, file *os.File) AnsiEventHandler {
 
 	return &WindowsAnsiEventHandler{
 		attributes: infoReset.Attributes,
-		fd:        fd,
-		file:      file,
-		infoReset: infoReset,
+		fd:         fd,
+		file:       file,
+		infoReset:  infoReset,
 	}
 }
 
@@ -301,6 +301,7 @@ func (h *WindowsAnsiEventHandler) VPA(param int) error {
 		return err
 	}
 	logger.Infof("VPA: [[%d]]", param)
+	h.clearWrap()
 	info, err := GetConsoleScreenBufferInfo(h.fd)
 	if err != nil {
 		return err
