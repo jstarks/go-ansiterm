@@ -71,6 +71,5 @@ func (h *WindowsAnsiEventHandler) scroll(param int, sr scrollRegion, info *CONSO
 	if err := ScrollConsoleScreenBuffer(h.fd, scrollRect, scrollRect, destOrigin, char); err != nil {
 		return err
 	}
-	logger.Infof("scroll success")
 	return nil
 }
