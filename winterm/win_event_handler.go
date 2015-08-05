@@ -473,7 +473,6 @@ func (h *WindowsAnsiEventHandler) SGR(params []int) error {
 	}
 	strings := []string{}
 	for _, v := range params {
-		logger.Infof("SGR: [%v]", strings)
 		strings = append(strings, strconv.Itoa(v))
 	}
 
