@@ -22,7 +22,7 @@ type WindowsAnsiEventHandler struct {
 	infoReset *CONSOLE_SCREEN_BUFFER_INFO
 	sr        scrollRegion
 	buffer    bytes.Buffer
-	wrapNext  bool
+	wasInMargin  bool
     curInfo   *CONSOLE_SCREEN_BUFFER_INFO
     curPos    COORD
 }
@@ -58,147 +58,215 @@ type scrollRegion struct {
 	bottom SHORT
 }
 
+// simulateLF simulates a LF or CR+LF by scrolling if necessary to handle the
+// current cursor position and scroll region settings, in which case it returns
+// true. If no special handling is necessary, then it does nothing and returns 
+// false. 
+//
+// In the false case, the caller should ensure that a carriage return 
+// and line feed are inserted or that the text is otherwise wrapped.
+func (h *WindowsAnsiEventHandler) simulateLF(includeCR bool) (bool, error) {
+    if err := h.cacheInfo(); err != nil {
+        return false, err
+    }    
+    if includeCR {
+        h.curPos.X = 0
+    }
+    sr, srActive := h.effectiveSr(h.curInfo.Window)
+    if h.curPos.Y == sr.bottom {
+        // Scrolling is necessary. Let Windows automatically scroll if the scrolling region 
+        // is the full window.
+        if !srActive {
+            return false, nil
+        } else {
+            // A custom scroll region is active. Scroll the window manually to simulate 
+            // the LF.
+            h.clearWrap()
+            newPos := h.curPos
+            if err := h.Flush(); err != nil {
+                return false, err
+            }
+            if err := h.scrollUp(1); err != nil {
+                return false, err
+            }
+            if includeCR {
+                if err := SetConsoleCursorPosition(h.fd, newPos); err != nil {
+                    return false, err
+                }
+            }
+            return true, nil
+        }
+    } else if h.curPos.Y < h.curInfo.Window.Bottom {
+        // Let Windows handle the LF.
+        h.curPos.Y++
+        return false, nil
+    } else {
+        // The cursor is at the bottom of the screen but outside the scroll
+        // region. Skip the LF.
+        if includeCR {
+            newPos := h.curPos
+            h.clearWrap()
+            if err := h.Flush(); err != nil {
+                return false, err
+            }
+            if err := SetConsoleCursorPosition(h.fd, newPos); err != nil {
+                return false, err
+            }
+        }
+        return true, nil
+    }
+    
+}
+
 func (h *WindowsAnsiEventHandler) Print(b byte) error {
     if err := h.cacheInfo(); err != nil {
         return err
     }    
-    // Update the current calculated position and scroll if this caused wrapping
-    // off the screen.
-    h.curPos.X++
-    if h.curPos.X > h.curInfo.Size.X {
-        sr := h.effectiveSr(h.curInfo.Window)
-        if h.curPos.Y < sr.bottom {
-            // nothing to scroll
-            h.curPos.X = 1
-            h.curPos.Y++
-        } else if sr.top == h.curInfo.Window.Top && sr.bottom == h.curInfo.Window.Bottom && false {
-            // scrolling will happen normally
-            h.curPos.X = 1
-        } else {
-            // A custom scroll region is active. Scroll the window manually.
-            if err := h.prepareForCommand(true); err != nil {
-                return err
-            }
-            if err := h.scrollUp(1); err != nil {
-                return err
-            }
-            pos := COORD{0, h.curPos.Y}
-            if err := SetConsoleCursorPosition(h.fd, pos); err != nil {
-                return err
-            }
-            // Retry printing the character now that the cursor is at the beginning of the line.
-            return h.Print(b)
+    // If the column is already in the "wrap" position, then
+    // simulate a CRLF (which may flush the buffer or just allow
+    // Windows to wrap automatically).
+    if h.curPos.X == h.curInfo.Size.X {
+        if _, err := h.simulateLF(true); err != nil {
+            return err
+        }
+        // Re-establish the cached position information.
+        if err := h.cacheInfo(); err != nil {
+            return err
         }
     }
+    h.curPos.X++
     return h.buffer.WriteByte(b)
 }
 
 func (h *WindowsAnsiEventHandler) Execute(b byte) error {
-    if err := h.cacheInfo(); err != nil {
-        return err
-    }
-    if h.curPos.X == h.curInfo.Size.X {
-        if err := h.prepareForCommand(true); err != nil {
-            return err
-        }
+    switch b {
+    case ANSI_TAB:
         if err := h.cacheInfo(); err != nil {
             return err
-        }        
-    }
-    switch (b) {
-        case ANSI_BEL:
-            // nothing
-        case ANSI_BACKSPACE:
-            if h.curPos.X > 0 {
-                h.curPos.X--
+        }
+        // Move to the next tab stop, but stay in the margin if already there.
+        if h.curPos.X != h.curInfo.Size.X {
+            newPos := h.curPos
+            newPos.X = (newPos.X + 8) - newPos.X%8
+            if newPos.X >= h.curInfo.Size.X {
+                newPos.X = h.curInfo.Size.X - 1
             }
-        //case ANSI_TAB:
-            // TODO
-        //case ANSI_VERTICAL_TAB:
-            // ???
-        //case ANSI_FORM_FEED:
-            // ???
-        case ANSI_LINE_FEED:
-            // this is going to wrap. let's assume non-VT100 behavior for now
-            sr := h.effectiveSr(h.curInfo.Window)
-            if h.curPos.Y < sr.bottom {
-                h.curPos.X = 0
-                h.curPos.Y++
-            } else if sr.top == h.curInfo.Window.Top && sr.bottom == h.curInfo.Window.Bottom && false {
-                // scrolling will happen normally, no cursor Y position change
-                h.curPos.X = 0
-            } else {
-                // A custom scroll region is active. Scroll the window manually.
-                if err := h.Flush(); err != nil {
-                    return err
-                }
-                if err := h.scrollUp(1); err != nil {
-                    return err
-                }
-                h.curPos.X = 0
-                return SetConsoleCursorPosition(h.fd, h.curPos)
+            if err := h.Flush(); err != nil {
+                return err
             }
-        case ANSI_CARRIAGE_RETURN:
-            h.curPos.X = 0
-        default:
-            return nil
+            if err := SetConsoleCursorPosition(h.fd, newPos); err != nil {
+                return err
+            }
+        }
+        return nil
+    
+    case ANSI_BEL:
+        // BEL preserves auto-wrap, which is tricky with our buffering strategy. 
+        // Just flush and write the byte directly.
+        if err := h.Flush(); err != nil {
+            return err
+        }
+        _, err := h.file.Write([]byte{ANSI_BEL})
+        return err
+    
+    case ANSI_BACKSPACE:
+        h.clearWrap()
+        if err := h.cacheInfo(); err != nil {
+            return err
+        }
+        if h.curPos.X > 0 {
+            h.curPos.X--
+        }
+        return h.buffer.WriteByte(b)
+        
+    case ANSI_VERTICAL_TAB, ANSI_FORM_FEED:
+        // Treat as true LF.
+        return h.IND()
+        
+    case ANSI_LINE_FEED:
+        // Simulate a CR and LF for now since there is no way in go-ansiterm
+        // to tell if the LF should include CR (and more things break when it's
+        // missing than when it's incorrectly added).
+        h.clearWrap()
+        handled, err := h.simulateLF(true)
+        if handled || err != nil {
+            return err
+        }
+        return h.buffer.WriteByte(b)
+        
+    case ANSI_CARRIAGE_RETURN:
+        h.clearWrap()
+        if err := h.cacheInfo(); err != nil {
+            return err
+        }
+        h.curPos.X = 0
+        return h.buffer.WriteByte(b)
+        
+    default:
+        return nil
     }
-    return h.buffer.WriteByte(b)
 }
 
 func (h *WindowsAnsiEventHandler) CUU(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("CUU: [%v]", []string{strconv.Itoa(param)})
+    h.clearWrap()
 	return h.moveCursorVertical(-param)
 }
 
 func (h *WindowsAnsiEventHandler) CUD(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("CUD: [%v]", []string{strconv.Itoa(param)})
+    h.clearWrap()
 	return h.moveCursorVertical(param)
 }
 
 func (h *WindowsAnsiEventHandler) CUF(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("CUF: [%v]", []string{strconv.Itoa(param)})
+    h.clearWrap()
 	return h.moveCursorHorizontal(param)
 }
 
 func (h *WindowsAnsiEventHandler) CUB(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("CUB: [%v]", []string{strconv.Itoa(param)})
+    h.clearWrap()
 	return h.moveCursorHorizontal(-param)
 }
 
 func (h *WindowsAnsiEventHandler) CNL(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("CNL: [%v]", []string{strconv.Itoa(param)})
+    h.clearWrap()
 	return h.moveCursorLine(param)
 }
 
 func (h *WindowsAnsiEventHandler) CPL(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("CPL: [%v]", []string{strconv.Itoa(param)})
+    h.clearWrap()
 	return h.moveCursorLine(-param)
 }
 
 func (h *WindowsAnsiEventHandler) CHA(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("CHA: [%v]", []string{strconv.Itoa(param)})
+    h.clearWrap()
 	return h.moveCursorColumn(param)
 }
 
@@ -217,10 +285,11 @@ func (h *WindowsAnsiEventHandler) VPA(param int) error {
 }
 
 func (h *WindowsAnsiEventHandler) CUP(row int, col int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("CUP: [%d %d]", row, col)
+    h.clearWrap()
 	info, err := GetConsoleScreenBufferInfo(h.fd)
 	if err != nil {
 		return err
@@ -235,26 +304,29 @@ func (h *WindowsAnsiEventHandler) CUP(row int, col int) error {
 }
 
 func (h *WindowsAnsiEventHandler) HVP(row int, col int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("HVP: [%d %d]", row, col)
+    h.clearWrap()
 	return h.CUP(row, col)
 }
 
 func (h *WindowsAnsiEventHandler) DECTCEM(visible bool) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("DECTCEM: [%v]", []string{strconv.FormatBool(visible)})
+    h.clearWrap()
 	return nil
 }
 
 func (h *WindowsAnsiEventHandler) ED(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("ED: [%v]", []string{strconv.Itoa(param)})
+    h.clearWrap()
 
 	// [J  -- Erases from the cursor to the end of the screen, including the cursor position.
 	// [1J -- Erases from the beginning of the screen to the cursor, including the cursor position.
@@ -306,10 +378,11 @@ func (h *WindowsAnsiEventHandler) ED(param int) error {
 }
 
 func (h *WindowsAnsiEventHandler) EL(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("EL: [%v]", strconv.Itoa(param))
+    h.clearWrap()
 
 	// [K  -- Erases from the cursor to the end of the line, including the cursor position.
 	// [1K -- Erases from the beginning of the line to the cursor, including the cursor position.
@@ -346,10 +419,11 @@ func (h *WindowsAnsiEventHandler) EL(param int) error {
 }
 
 func (h *WindowsAnsiEventHandler) IL(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("IL: [%v]", strconv.Itoa(param))
+    h.clearWrap()
 	if err := h.scrollDown(param); err != nil {
 		return err
 	}
@@ -358,16 +432,16 @@ func (h *WindowsAnsiEventHandler) IL(param int) error {
 }
 
 func (h *WindowsAnsiEventHandler) DL(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("DL: [%v]", strconv.Itoa(param))
+    h.clearWrap()
 	return h.scrollUp(param)
 }
 
 func (h *WindowsAnsiEventHandler) SGR(params []int) error {
-	// SGR does not cancel a current wrap operation
-	if err := h.prepareForCommand(false); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	strings := []string{}
@@ -406,23 +480,25 @@ func (h *WindowsAnsiEventHandler) SGR(params []int) error {
 }
 
 func (h *WindowsAnsiEventHandler) SU(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("SU: [%v]", []string{strconv.Itoa(param)})
+    h.clearWrap()
 	return h.scrollPageUp()
 }
 
 func (h *WindowsAnsiEventHandler) SD(param int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("SD: [%v]", []string{strconv.Itoa(param)})
+    h.clearWrap()
 	return h.scrollPageDown()
 }
 
 func (h *WindowsAnsiEventHandler) DA(params []string) error {
-	// Since this command just affects the buffer, there is no need to call prepareForCommand
+	// Since this command just affects the buffer, there is no need to call Flush
 
 	logger.Infof("DA: [%v]", params)
 
@@ -451,7 +527,7 @@ func (h *WindowsAnsiEventHandler) DA(params []string) error {
 }
 
 func (h *WindowsAnsiEventHandler) DECSTBM(top int, bottom int) error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Infof("DECSTBM: [%d, %d]", top, bottom)
@@ -459,92 +535,114 @@ func (h *WindowsAnsiEventHandler) DECSTBM(top int, bottom int) error {
 	// Windows is 0 indexed, Linux is 1 indexed
 	h.sr.top = SHORT(top - 1)
 	h.sr.bottom = SHORT(bottom - 1)
-
-	return nil
+    
+    // This command also moves the cursor to the origin.
+    h.clearWrap()
+	return SetConsoleCursorPosition(h.fd, COORD{0,0})
 }
 
-func (h *WindowsAnsiEventHandler) effectiveSr(window SMALL_RECT) scrollRegion {
+func (h *WindowsAnsiEventHandler) effectiveSr(window SMALL_RECT) (scrollRegion, bool) {
     top := AddInRange(window.Top, h.sr.top, window.Top, window.Bottom)
     bottom := AddInRange(window.Top, h.sr.bottom, window.Top, window.Bottom)
     if top >= bottom {
         top = window.Top
         bottom = window.Bottom
     }
-    return scrollRegion{top: top, bottom: bottom}
+    return scrollRegion{top: top, bottom: bottom}, top != window.Top || bottom != window.Bottom
 }
 
 func (h *WindowsAnsiEventHandler) RI() error {
-	if err := h.prepareForCommand(true); err != nil {
+	if err := h.Flush(); err != nil {
 		return err
 	}
 	logger.Info("RI: []")
+    h.clearWrap()
 
 	info, err := GetConsoleScreenBufferInfo(h.fd)
 	if err != nil {
 		return err
 	}
 
-    sr := h.effectiveSr(info.Window)
-	if info.CursorPosition.Y > sr.top {
-		return h.moveCursorVertical(-1)
-	} else {
+    sr, _ := h.effectiveSr(info.Window)
+	if info.CursorPosition.Y == sr.top {
 		return h.scrollDown(1)
+    } else {
+		return h.moveCursorVertical(-1)
 	}
 }
 
 func (h *WindowsAnsiEventHandler) IND() error {
-	if err := h.prepareForCommand(true); err != nil {
-		return err
-	}
 	logger.Info("IND: []")
     
-	info, err := GetConsoleScreenBufferInfo(h.fd)
-	if err != nil {
-		return err
-	}
-    
-    sr := h.effectiveSr(info.Window)
-    if info.CursorPosition.Y < sr.bottom {
-        return h.moveCursorVertical(1)
-    } else {
-        return h.scrollUp(1)
+    h.clearWrap()
+    handled, err := h.simulateLF(false)
+    if err != nil {
+        return err
     }
+    if !handled {
+        // The LF was not simulated, so send it through to Windows.
+        if err := h.cacheInfo(); err != nil {
+            return err
+        }
+        h.buffer.WriteByte('\n')
+        // Windows LF will reset the cursor column position. Update it
+        // to its old position.
+        if h.curPos.X != 0 {
+            newPos := h.curPos
+            if err := h.Flush(); err != nil {
+                return err
+            }
+            h.cacheInfo()
+            if err := SetConsoleCursorPosition(h.fd, newPos); err != nil {
+                return err
+            }
+        }
+    }
+    return nil
+}
+
+func (h *WindowsAnsiEventHandler) bufferEmpty() bool {
+    return h.buffer.Len() == 0 || h.wasInMargin && h.buffer.Len() == 1
 }
 
 func (h *WindowsAnsiEventHandler) Flush() error {
-	if h.buffer.Len() == 0 || (h.wrapNext && h.buffer.Len() == 1) {
+	if h.bufferEmpty() {
         h.curInfo = nil
 		return nil
 	}
     
+	logger.Infof("Flush: [%s]", h.buffer.Bytes())
+
     if err := h.cacheInfo(); err != nil {
         return nil
     }
-
-	logger.Infof("Flush: [%s]", h.buffer.Bytes())
-
-	// Write everything but the last byte.
 	bytes := h.buffer.Bytes()
-	wrapIndex := len(bytes) - 1
-	if len(bytes) > 1 {
-		if _, err := h.file.Write(bytes[:wrapIndex]); err != nil {
+    
+    var (writeCount int
+         wasInMargin bool)
+    if h.curPos.X == h.curInfo.Size.X {
+        // We are in the margin. Write everything but the last byte (which 
+        // by construction must be a printable character).
+        writeCount = len(bytes) - 1
+        wasInMargin = true
+    } else {
+        writeCount = len(bytes)
+    }
+    
+    if writeCount > 0 {
+		if _, err := h.file.Write(bytes[:writeCount]); err != nil {
 			return err
 		}
 	}
 
-    info, err := GetConsoleScreenBufferInfo(h.fd)
-    if err != nil {
-        return err
-    }
-
-    if info.CursorPosition.X == info.Size.X-1 {
+    if wasInMargin {
 		// Output the last byte to the screen without adjusting the cursor position.
-		wrapByte := bytes[wrapIndex]
+		wrapByte := bytes[writeCount]
         logger.Infof("output trailing character '%c' to avoid wrap", wrapByte)
-		charInfo := []CHAR_INFO{{UnicodeChar: WCHAR(wrapByte), Attributes: info.Attributes}}
+		charInfo := []CHAR_INFO{{UnicodeChar: WCHAR(wrapByte), Attributes: h.curInfo.Attributes}}
 		size := COORD{1, 1}
 		position := COORD{0, 0}
-		region := SMALL_RECT{Left: info.CursorPosition.X, Top: info.CursorPosition.Y, Right: info.CursorPosition.X, Bottom: info.CursorPosition.Y}
+		region := SMALL_RECT{Left: h.curPos.X-1, Top: h.curPos.Y, Right: h.curPos.X-1, Bottom: h.curPos.Y}
 		if err := WriteConsoleOutput(h.fd, charInfo, size, position, &region); err != nil {
 			return err
 		}
@@ -553,27 +651,11 @@ func (h *WindowsAnsiEventHandler) Flush() error {
 		// a byte is printed.
 		h.buffer.Reset()
 		h.buffer.WriteByte(wrapByte)
-		h.wrapNext = true
 	} else {
-		if _, err := h.file.Write(bytes[wrapIndex:]); err != nil {
-			return err
-		}
 		h.buffer.Reset()
-		h.wrapNext = false
 	}
-	return nil
-}
-
-func (h *WindowsAnsiEventHandler) prepareForCommand(resetWrap bool) error {
-	if err := h.Flush(); err != nil {
-		return err
-	}
-	if resetWrap && h.wrapNext {
-		// Skip the wrap byte -- it has already been written to the screen
-		// and should not be rewritten now that auto-wrap is being reset.
-		h.buffer.ReadByte()
-		h.wrapNext = false
-	}
+    h.wasInMargin = wasInMargin
+    h.curInfo = nil
 	return nil
 }
 
@@ -585,6 +667,22 @@ func (h *WindowsAnsiEventHandler) cacheInfo() error {
         }
         h.curInfo = info
         h.curPos = info.CursorPosition
+        if h.wasInMargin && h.curPos.X == h.curInfo.Size.X-1 {
+            h.curPos.X = h.curInfo.Size.X
+        }
     }    
     return nil
+}
+
+func (h *WindowsAnsiEventHandler) clearWrap() {
+	if !h.bufferEmpty() {
+        if h.curInfo != nil && h.curPos.X == h.curInfo.Size.X {
+            h.curPos.X = h.curInfo.Size.X - 1
+        }        
+    } else if h.wasInMargin {
+		// Skip the wrap byte -- it has already been written to the screen
+		// and should not be rewritten now that auto-wrap is being reset.
+		h.buffer.ReadByte()
+		h.wasInMargin = false        
+    }
 }
