@@ -72,11 +72,11 @@ func (h *WindowsAnsiEventHandler) simulateLF(includeCR bool) (bool, error) {
 	if includeCR {
 		h.curPos.X = 0
 	}
-	sr, srActive := h.effectiveSr(h.curInfo.Window)
+	sr := h.effectiveSr(h.curInfo.Window)
 	if h.curPos.Y == sr.bottom {
 		// Scrolling is necessary. Let Windows automatically scroll if the scrolling region
 		// is the full window.
-		if !srActive {
+		if sr.top == h.curInfo.Window.Top && sr.bottom == h.curInfo.Window.Bottom {
 			return false, nil
 		} else {
 			// A custom scroll region is active. Scroll the window manually to simulate
@@ -288,7 +288,7 @@ func (h *WindowsAnsiEventHandler) CUP(row int, col int) error {
 	if err := h.Flush(); err != nil {
 		return err
 	}
-	logger.Infof("CUP: [%d %d]", row, col)
+	logger.Infof("CUP: [[%d %d]]", row, col)
 	h.clearWrap()
 	info, err := GetConsoleScreenBufferInfo(h.fd)
 	if err != nil {
@@ -307,7 +307,7 @@ func (h *WindowsAnsiEventHandler) HVP(row int, col int) error {
 	if err := h.Flush(); err != nil {
 		return err
 	}
-	logger.Infof("HVP: [%d %d]", row, col)
+	logger.Infof("HVP: [[%d %d]]", row, col)
 	h.clearWrap()
 	return h.CUP(row, col)
 }
@@ -541,16 +541,6 @@ func (h *WindowsAnsiEventHandler) DECSTBM(top int, bottom int) error {
 	return SetConsoleCursorPosition(h.fd, COORD{0, 0})
 }
 
-func (h *WindowsAnsiEventHandler) effectiveSr(window SMALL_RECT) (scrollRegion, bool) {
-	top := AddInRange(window.Top, h.sr.top, window.Top, window.Bottom)
-	bottom := AddInRange(window.Top, h.sr.bottom, window.Top, window.Bottom)
-	if top >= bottom {
-		top = window.Top
-		bottom = window.Bottom
-	}
-	return scrollRegion{top: top, bottom: bottom}, top != window.Top || bottom != window.Bottom
-}
-
 func (h *WindowsAnsiEventHandler) RI() error {
 	if err := h.Flush(); err != nil {
 		return err
@@ -563,7 +553,7 @@ func (h *WindowsAnsiEventHandler) RI() error {
 		return err
 	}
 
-	sr, _ := h.effectiveSr(info.Window)
+	sr := h.effectiveSr(info.Window)
 	if info.CursorPosition.Y == sr.top {
 		return h.scrollDown(1)
 	} else {
