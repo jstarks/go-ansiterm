@@ -33,11 +33,11 @@ func (h *WindowsAnsiEventHandler) scroll(param int, sr scrollRegion) error {
 	if err != nil {
 		return err
 	}
-    
-    if sr.top >= sr.bottom {
-        sr.top = 0
-        sr.bottom = info.Window.Bottom - info.Window.Top + 1
-    }
+
+	if sr.top >= sr.bottom {
+		sr.top = 0
+		sr.bottom = info.Window.Bottom - info.Window.Top + 1
+	}
 
 	logger.Infof("scroll: scrollTop: %d, scrollBottom: %d", sr.top, sr.bottom)
 	logger.Infof("scroll: windowTop: %d, windowBottom: %d", info.Window.Top, info.Window.Bottom)
@@ -78,6 +78,6 @@ func (h *WindowsAnsiEventHandler) scroll(param int, sr scrollRegion) error {
 	if err := ScrollConsoleScreenBuffer(h.fd, scrollRect, clipRegion, destOrigin, char); err != nil {
 		return err
 	}
-    logger.Infof("scroll success")
+	logger.Infof("scroll success")
 	return nil
 }
