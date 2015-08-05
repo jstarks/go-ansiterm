@@ -94,6 +94,7 @@ func (h *WindowsAnsiEventHandler) simulateLF(includeCR bool) (bool, error) {
 			if err := h.Flush(); err != nil {
 				return false, err
 			}
+			logger.Info("Simulating LF inside scroll region")
 			if err := h.scrollUp(1); err != nil {
 				return false, err
 			}
@@ -116,6 +117,7 @@ func (h *WindowsAnsiEventHandler) simulateLF(includeCR bool) (bool, error) {
 	} else {
 		// The cursor is at the bottom of the screen but outside the scroll
 		// region. Skip the LF.
+		logger.Info("Simulating LF outside scroll region")
 		if includeCR {
 			if err := h.Flush(); err != nil {
 				return false, err
@@ -127,6 +129,33 @@ func (h *WindowsAnsiEventHandler) simulateLF(includeCR bool) (bool, error) {
 		}
 		return true, nil
 	}
+}
+
+// executeLF executes a LF without a CR.
+func (h *WindowsAnsiEventHandler) executeLF() error {
+	handled, err := h.simulateLF(false)
+	if err != nil {
+		return err
+	}
+	if !handled {
+		// Windows LF will reset the cursor column position. Write the LF
+		// and restore the cursor position.
+		pos, _, err := h.getCurrentInfo()
+		if err != nil {
+			return err
+		}
+		h.buffer.WriteByte(ANSI_LINE_FEED)
+		if pos.X != 0 {
+			if err := h.Flush(); err != nil {
+				return err
+			}
+			logger.Info("Resetting cursor position for LF without CR")
+			if err := SetConsoleCursorPosition(h.fd, pos); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (h *WindowsAnsiEventHandler) Print(b byte) error {
@@ -155,6 +184,7 @@ func (h *WindowsAnsiEventHandler) Print(b byte) error {
 func (h *WindowsAnsiEventHandler) Execute(b byte) error {
 	switch b {
 	case ANSI_TAB:
+		logger.Info("Execute(TAB)")
 		// Move to the next tab stop, but preserve auto-wrap if already set.
 		if !h.wrapNext {
 			pos, info, err := h.getCurrentInfo()
@@ -198,7 +228,7 @@ func (h *WindowsAnsiEventHandler) Execute(b byte) error {
 
 	case ANSI_VERTICAL_TAB, ANSI_FORM_FEED:
 		// Treat as true LF.
-		return h.IND()
+		return h.executeLF()
 
 	case ANSI_LINE_FEED:
 		// Simulate a CR and LF for now since there is no way in go-ansiterm
@@ -567,29 +597,7 @@ func (h *WindowsAnsiEventHandler) RI() error {
 
 func (h *WindowsAnsiEventHandler) IND() error {
 	logger.Info("IND: []")
-
-	handled, err := h.simulateLF(false)
-	if err != nil {
-		return err
-	}
-	if !handled {
-		// Windows LF will reset the cursor column position. Write the LF
-		// and restore the cursor position.
-		pos, _, err := h.getCurrentInfo()
-		if err != nil {
-			return err
-		}
-		h.buffer.WriteByte(ANSI_LINE_FEED)
-		if pos.X != 0 {
-			if err := h.Flush(); err != nil {
-				return err
-			}
-			if err := SetConsoleCursorPosition(h.fd, pos); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return h.executeLF()
 }
 
 func (h *WindowsAnsiEventHandler) Flush() error {
