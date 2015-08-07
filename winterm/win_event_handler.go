@@ -235,11 +235,14 @@ func (h *WindowsAnsiEventHandler) Execute(b byte) error {
 		// Simulate a CR and LF for now since there is no way in go-ansiterm
 		// to tell if the LF should include CR (and more things break when it's
 		// missing than when it's incorrectly added).
-		handled, err := h.simulateLF(true)
-		if handled || err != nil {
-			return err
-		}
-		return h.buffer.WriteByte(ANSI_LINE_FEED)
+		/*
+			handled, err := h.simulateLF(true)
+			if handled || err != nil {
+				return err
+			}
+			return h.buffer.WriteByte(ANSI_LINE_FEED)
+		*/
+		return h.executeLF()
 
 	case ANSI_CARRIAGE_RETURN:
 		if h.wrapNext {
